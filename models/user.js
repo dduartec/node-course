@@ -50,10 +50,8 @@ class User {
 
     getCart() {
         const db = getDb();
-        const productsIds = this.cart.items.map(item => {
-            return item.productId;
-        });
-        return db.collection('products').find({ _id: { $in: productsIds } }).toArray()
+        let cartItems;
+        return db.collection('products').find({ _id: { $in: this.cart.items.map(i => i.productId) } }).toArray()
             .then(products => {
                 return products.map(p => {
                     return {
@@ -62,6 +60,23 @@ class User {
                         }).quantity
                     };
                 });
+            }).then(products => {
+                // update cart with existing products on db (remove deleted products that are still on the cart)
+                cartItems = products;
+                const updatedCart = {
+                    items: products.map(i => {
+                        return {
+                            productId: i._id,
+                            quantity: i.quantity
+                        };
+                    })
+                };
+                return db.collection(collection).updateOne(
+                    { _id: this._id },
+                    { $set: { cart: updatedCart } }
+                );
+            }).then(result => {
+                return cartItems;
             }).catch(err => console.log(err));
     }
 
@@ -89,6 +104,36 @@ class User {
             { _id: this._id },
             { $set: { cart: updatedCart } }
         )
+    }
+
+    addOrder() {
+        const db = getDb();
+        return this.getCart().then(products => {
+            const order = {
+                items: products,
+                user: {
+                    _id: new ObjectId(this._id),
+                    name: this.name,
+                    email: this.email,
+                }
+            };
+            return db.collection('orders').insertOne(order);
+        }).then(result => {
+            this.cart = { items: [] };
+            return db.collection(collection).updateOne(
+                { _id: this._id },
+                { $set: { cart: { items: [] } } }
+            )
+        }).catch(err => console.log(err));
+
+    }
+
+    getOrders() {
+        const db = getDb();
+        return db.collection('orders').find({ 'user._id': this._id }).toArray()
+            .then(orders => {
+                return orders;
+            }).catch(err => console.log(err));
     }
 
     static fetchAll() {
